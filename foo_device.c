@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include <linux/module.h>
+#include <linux/device.h>
 #include <linux/fs.h>
 
-#define DEVICE_NAME "foo_device"
-
+#define DEVICE_NAME "foo_dsp"
 static int major;
+
+static struct class foo_device_class = {
+	.name = "foo_device",
+};
 
 static int foo_open(struct inode *inodep, struct file *filep)
 {
@@ -46,20 +50,33 @@ static struct file_operations fops = {
 
 static int __init foo_device_init(void)
 {
-	major = register_chrdev(0, DEVICE_NAME, &fops);
+	int ret = 0;
 
+	major = register_chrdev(0, DEVICE_NAME, &fops);
 	if (major < 0) {
 		pr_err("foo_device load failed\n");
 		return major;
 	}
 
+	ret = class_register(&foo_device_class);
+	if (ret)
+		goto out_chrdev;
+
+	device_create(&foo_device_class, NULL, MKDEV(major, 0), NULL,
+			"foo_device");
+
 	pr_info("foo_device module has been loaded: %d\n", major);
+
 	return 0;
+out_chrdev:
+	unregister_chrdev(major, "foo_device");
+	return ret;
 }
 
 static void __exit foo_device_exit(void)
 {
 	unregister_chrdev(major, DEVICE_NAME);
+	class_unregister(&foo_device_class);
 	pr_info("foo_device module has been unloaded\n");
 }
 
