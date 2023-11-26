@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include <linux/module.h>
+#include <linux/cdev.h>
 #include <linux/device.h>
+#include <linux/platform_device.h>
 #include <linux/fs.h>
 
 #define DEVICE_NAME "foo_dsp"
 static int major;
+module_param(major, int, 0);
+MODULE_PARM_DESC(major, "Major device number");
 
-static struct class foo_device_class = {
-	.name = "foo_device",
-};
+static struct platform_device *pdev;  /* use in dev_*() */
+static struct cdev foo_driver_cdev;
 
 static int foo_open(struct inode *inodep, struct file *filep)
 {
@@ -42,6 +45,7 @@ static ssize_t foo_read(struct file *filep, char *buffer, size_t len,
 }
 
 static struct file_operations fops = {
+	.owner = THIS_MODULE,
 	.open = foo_open,
 	.read = foo_read,
 	.write = foo_write,
@@ -51,32 +55,57 @@ static struct file_operations fops = {
 static int __init foo_device_init(void)
 {
 	int ret = 0;
+	dev_t devid;
 
-	major = register_chrdev(0, DEVICE_NAME, &fops);
-	if (major < 0) {
-		pr_err("foo_device load failed\n");
-		return major;
+	pdev = platform_device_alloc(DEVICE_NAME, 0);
+	if (!pdev)
+		return -ENOMEM;
+
+	ret = platform_device_add(pdev);
+	if (ret) {
+		ret = -ENODEV;
+		goto undo_platform_dev_alloc;
 	}
 
-	ret = class_register(&foo_device_class);
-	if (ret)
-		goto out_chrdev;
+	if (major) {
+		devid = MKDEV(major, 0);
+		ret = register_chrdev_region(devid, 1, DEVICE_NAME);
+	} else {
+		ret = alloc_chrdev_region(&devid, 0, 1, DEVICE_NAME);
+		major = MAJOR(devid);
+	}
 
-	device_create(&foo_device_class, NULL, MKDEV(major, 0), NULL,
-			"foo_device");
+	if (ret < 0) {
+		pr_err("register-chrdev failed: %d\n", ret);
+		goto undo_platform_dev_add;
+	}
+
+	if (!major) {
+		major = ret;
+		pr_debug("got dynamic major %d\n", major);
+	}
+
+	/* ignore minor errs, and succeed */
+	cdev_init(&foo_driver_cdev, &fops);
+	cdev_add(&foo_driver_cdev, devid, 1);
 
 	pr_info("foo_device module has been loaded: %d\n", major);
 
 	return 0;
-out_chrdev:
-	unregister_chrdev(major, "foo_device");
+
+undo_platform_dev_add:
+	platform_device_del(pdev);
+undo_platform_dev_alloc:
+	platform_device_put(pdev);
+
 	return ret;
 }
 
 static void __exit foo_device_exit(void)
 {
-	unregister_chrdev(major, DEVICE_NAME);
-	class_unregister(&foo_device_class);
+	cdev_del(&foo_driver_cdev);
+	unregister_chrdev_region(MKDEV(major, 0), 1);
+	platform_device_unregister(pdev);
 	pr_info("foo_device module has been unloaded\n");
 }
 
