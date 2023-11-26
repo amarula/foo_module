@@ -15,7 +15,7 @@ static struct cdev foo_driver_cdev;
 
 static int foo_open(struct inode *inodep, struct file *filep)
 {
-	pr_info("foo_device device opened\n");
+	dev_info(&pdev->dev, "foo_device device opened\n");
 	return 0;
 }
 
@@ -23,13 +23,13 @@ static ssize_t foo_write(struct file *filep, const char *buffer,
 			 size_t len, loff_t *offset)
 {
 
-	pr_info("Sorry, foo_device is read only\n");
+	dev_info(&pdev->dev, "Sorry, foo_device is read only\n");
 	return -EFAULT;
 }
 
 static int foo_release(struct inode *inodep, struct file *filep)
 {
-	pr_info("foo_device device closed\n");
+	dev_info(&pdev->dev, "foo_device device closed\n");
 	return 0;
 }
 
@@ -76,20 +76,20 @@ static int __init foo_device_init(void)
 	}
 
 	if (ret < 0) {
-		pr_err("register-chrdev failed: %d\n", ret);
+		dev_err(&pdev->dev, "register-chrdev failed: %d\n", ret);
 		goto undo_platform_dev_add;
 	}
 
 	if (!major) {
 		major = ret;
-		pr_debug("got dynamic major %d\n", major);
+		dev_dbg(&pdev->dev, "got dynamic major %d\n", major);
 	}
 
 	/* ignore minor errs, and succeed */
 	cdev_init(&foo_driver_cdev, &fops);
 	cdev_add(&foo_driver_cdev, devid, 1);
 
-	pr_info("foo_device module has been loaded: %d\n", major);
+	dev_info(&pdev->dev, "foo_device module has been loaded: %d\n", major);
 
 	return 0;
 
@@ -106,7 +106,7 @@ static void __exit foo_device_exit(void)
 	cdev_del(&foo_driver_cdev);
 	unregister_chrdev_region(MKDEV(major, 0), 1);
 	platform_device_unregister(pdev);
-	pr_info("foo_device module has been unloaded\n");
+	dev_info(&pdev->dev, "foo_device module has been unloaded\n");
 }
 
 module_init(foo_device_init);
